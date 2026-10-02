@@ -1,0 +1,31 @@
+{
+  "name": "@cortex/core",
+  "version": "1.0.0",
+  "description": "Cortex Core Engine — AST Indexer, Hybrid Retrieval, Caching & Telemetry",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "node --test dist/**/*.test.js"
+  },
+  "dependencies": {
+    "@xenova/transformers": "^2.17.2",
+    "web-tree-sitter": "^0.22.6",
+    "@qdrant/js-client-rest": "^1.13.0",
+    "pg": "^8.13.1",
+    "@electric-sql/pglite": "^0.2.14",
+    "ioredis": "^5.5.0",
+    "groq-sdk": "^0.15.0",
+    "dotenv": "^16.4.7",
+    "zod": "^3.24.2",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.11",
+    "@types/ioredis": "^5.0.0",
+    "@types/uuid": "^10.0.0",
+    "typescript": "^5.7.3"
+  }
+}

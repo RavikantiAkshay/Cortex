@@ -1,0 +1,41 @@
+# Node dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build outputs
+dist/
+**/dist/
+build/
+**/build/
+*.tsbuildinfo
+
+# Local data, databases & vector caches
+data/
+**/data/
+temp_repos/
+**/temp_repos/
+.cache/
+logs/
+*.log
+*.sqlite
+*.sqlite3
+
+# Environment & Secrets
+.env
+.env.*
+.env.local
+.env.development
+.env.test
+.env.production
+!.env.example
+
+# Markdown documents: Only README.md is permitted in Git
+*.md
+!README.md
+
+# OS files
+.DS_Store
+Thumbs.db
