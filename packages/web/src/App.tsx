@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { marked } from 'marked';
 import {
   Brain,
@@ -72,6 +72,14 @@ export default function App() {
     latencyMs?: number;
     tokensUsed?: number;
   } | null>(null);
+
+  const answerContentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isQuerying && answerContentRef.current) {
+      answerContentRef.current.scrollTop = answerContentRef.current.scrollHeight;
+    }
+  }, [streamingAnswer, isQuerying]);
 
   // Graph state
   const [graphData, setGraphData] = useState<{ nodes: any[]; edges: any[] }>({ nodes: [], edges: [] });
@@ -262,6 +270,8 @@ export default function App() {
               setCitations(prev => [...prev, data]);
             } else if (event === 'token') {
               setStreamingAnswer(prev => prev + data.text);
+            } else if (event === 'error') {
+              setStreamingAnswer(prev => prev ? `${prev}\n\n⚠️ Error: ${data.message}` : `⚠️ Error: ${data.message}`);
             } else if (event === 'done') {
               setQueryStats({
                 cacheHit: data.cache_hit,
@@ -418,28 +428,28 @@ export default function App() {
             <div className="query-grid">
               {/* Left Col: Query and Answer */}
               <div className="cortex-card answer-panel">
-                <div>
-                  <div className="answer-header">
-                    <div className="answer-title-wrap">
-                      <Sparkles className="w-4 h-4" />
-                      <span>Synthesized Grounded Answer</span>
-                    </div>
-
-                    {queryStats && (
-                      <div className="answer-badges">
-                        {queryStats.cacheHit ? (
-                          <span className="badge-cache-hit">
-                            <Zap className="w-3 h-3" />
-                            <span>Cache HIT</span>
-                          </span>
-                        ) : (
-                          <span className="badge-latency">Hybrid RRF</span>
-                        )}
-                        <span className="badge-latency">{queryStats.latencyMs}ms</span>
-                      </div>
-                    )}
+                <div className="answer-header">
+                  <div className="answer-title-wrap">
+                    <Sparkles className="w-4 h-4" />
+                    <span>Synthesized Grounded Answer</span>
                   </div>
 
+                  {queryStats && (
+                    <div className="answer-badges">
+                      {queryStats.cacheHit ? (
+                        <span className="badge-cache-hit">
+                          <Zap className="w-3 h-3" />
+                          <span>Cache HIT</span>
+                        </span>
+                      ) : (
+                        <span className="badge-latency">Hybrid RRF</span>
+                      )}
+                      <span className="badge-latency">{queryStats.latencyMs}ms</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="answer-content-area" ref={answerContentRef}>
                   {streamingAnswer ? (
                     <div
                       className="answer-body"

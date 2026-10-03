@@ -21,7 +21,7 @@ import {
   QueryLogger,
   DependencyGraphBuilder,
   BenchmarkRunner,
-} from '@cortex/core';
+} from '../../core/dist/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Load .env: user home config first, then monorepo root as fallback

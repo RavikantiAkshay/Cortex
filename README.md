@@ -53,9 +53,9 @@ That's it. On first run, Cortex will:
 
 ```
   ╔══════════════════════════════════════════════════════╗
-  ║        ◆  C O R T E X  ◆                             ║
+  ║        ◆  C O R T E X  ◆                            ║
   ║        Codebase Intelligence Engine                  ║
-  ║        v1.0.0 · AST Chunking · Hybrid RAG · MCP     ║
+  ║        v1.0.3 · AST Chunking · Hybrid RAG · MCP      ║
   ╚══════════════════════════════════════════════════════╝
 
   How would you like to use Cortex?
@@ -395,7 +395,7 @@ All configuration is stored in `~/.cortex-rag/.env`. The launcher creates this a
 | Variable | Default | Description |
 |---|---|---|
 | `GROQ_API_KEY` | *(required)* | Your Groq API key for LLM synthesis |
-| `GROQ_MODEL` | `qwen/qwen3-32b` | Groq model for synthesis |
+| `GROQ_MODEL` | `qwen/qwen3.8-27b` | Groq model for synthesis |
 | `DATABASE_MODE` | `embedded` | `embedded` (PGlite) or `postgres` (external PostgreSQL) |
 | `VECTOR_STORE_MODE` | `embedded` | `embedded` (in-memory) or `qdrant` (Qdrant server) |
 | `REDIS_MODE` | `embedded` | `embedded` (in-memory) or `redis` (external Redis) |

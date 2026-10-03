@@ -15,7 +15,7 @@ import {
   GraphSearcher,
   HybridRetriever,
   DependencyGraphBuilder,
-} from '@cortex/core';
+} from '../../core/dist/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(os.homedir(), '.cortex-rag', '.env') });

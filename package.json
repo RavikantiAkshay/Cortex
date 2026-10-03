@@ -1,6 +1,6 @@
 {
   "name": "cortex-rag",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "Codebase Intelligence Engine & MCP Server — AST semantic chunking, tri-hybrid retrieval (BM25 + vectors + graph), and grounded LLM synthesis for any repository.",
   "type": "module",
   "private": false,

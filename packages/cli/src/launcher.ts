@@ -9,7 +9,7 @@ import { createInterface } from 'readline';
 import { spawn } from 'child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const VERSION = '1.0.0';
+const VERSION = '1.0.3';
 
 // ─── Paths ──────────────────────────────────────────────────────────────────
 
@@ -140,7 +140,7 @@ EMBEDDING_MODEL=Xenova/all-MiniLM-L6-v2
 # LLM Synthesis (Groq — free tier)
 LLM_PROVIDER=groq
 GROQ_API_KEY=${groqKey}
-GROQ_MODEL=qwen/qwen3-32b
+GROQ_MODEL=qwen/qwen3.8-27b
 
 # MCP Configuration
 MCP_SERVER_NAME=cortex-mcp
@@ -249,11 +249,20 @@ async function launchWeb() {
 
   // Handle cleanup
   const cleanup = () => {
-    api.kill();
+    try { api.kill(); } catch {}
     process.exit(0);
   };
   process.on('SIGINT', cleanup);
   process.on('SIGTERM', cleanup);
+
+  return new Promise<void>((resolve) => {
+    api.on('exit', (code) => {
+      if (code !== 0 && code !== null) {
+        console.error(chalk.red(`\n  Server exited with code ${code}`));
+      }
+      resolve();
+    });
+  });
 }
 
 async function launchCLI(args: string[]) {

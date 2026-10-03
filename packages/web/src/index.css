@@ -277,13 +277,16 @@ code, pre {
   }
 }
 
-/* ── Answer Panel ── */
+/* ── Answer Panel (Fixed Height & Rock-Solid Layout) ── */
 .answer-panel {
   display: flex;
   flex-direction: column;
-  min-height: 520px;
-  padding: 36px 40px;
+  height: 640px;
+  max-height: 640px;
+  padding: 32px 36px;
   background: #121215;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .answer-header {
@@ -292,7 +295,29 @@ code, pre {
   justify-content: space-between;
   padding-bottom: 18px;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 26px;
+  margin-bottom: 20px;
+  flex-shrink: 0;
+}
+
+.answer-content-area {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 12px;
+}
+
+.answer-content-area::-webkit-scrollbar {
+  width: 6px;
+}
+.answer-content-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+.answer-content-area::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 4px;
+}
+.answer-content-area::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
 }
 
 .answer-title-wrap {
@@ -479,9 +504,11 @@ code, pre {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 120px 20px;
+  height: 100%;
+  min-height: 400px;
+  padding: 40px 20px;
   text-align: center;
-  color: #d4d4d8;
+  color: #a1a1aa;
   gap: 16px;
   font-size: 0.95rem;
 }
@@ -503,8 +530,23 @@ code, pre {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-height: 640px;
+  max-height: 590px;
   overflow-y: auto;
+  padding-right: 6px;
+}
+
+.citations-list::-webkit-scrollbar {
+  width: 6px;
+}
+.citations-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.citations-list::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 4px;
+}
+.citations-list::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
 }
 
 .citation-card {
