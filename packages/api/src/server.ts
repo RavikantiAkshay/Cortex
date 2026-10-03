@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import dotenv from 'dotenv';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import {
   getDatabase,
@@ -23,8 +24,14 @@ import {
 } from '@cortex/core';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Load .env: user home config first, then monorepo root as fallback
+dotenv.config({ path: path.join(os.homedir(), '.cortex-rag', '.env') });
+dotenv.config({ path: path.join(os.homedir(), '.cortex-code', '.env') });
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
-// Cortex Fastify API Gateway v1.0.1
+
+
+import fastifyStatic from '@fastify/static';
+import fs from 'fs';
 
 const fastify = Fastify({
   logger: {
@@ -36,6 +43,23 @@ await fastify.register(cors, {
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
 });
+
+// Serve Web Dashboard if built dist exists
+const webDistPath = path.resolve(__dirname, '../../web/dist');
+if (fs.existsSync(webDistPath)) {
+  await fastify.register(fastifyStatic, {
+    root: webDistPath,
+    prefix: '/',
+    wildcard: false,
+  });
+
+  fastify.setNotFoundHandler((request, reply) => {
+    if (!request.raw.url?.startsWith('/api/')) {
+      return reply.sendFile('index.html');
+    }
+    reply.status(404).send({ error: { message: `Route ${request.method}:${request.url} not found` } });
+  });
+}
 
 // Singletons
 const db = await getDatabase();

@@ -1,13 +1,20 @@
 {
-  "name": "cortex-monorepo",
+  "name": "cortex-rag",
   "version": "1.0.0",
-  "private": true,
-  "description": "Cortex — Codebase Intelligence Engine + MCP Server",
+  "description": "Codebase Intelligence Engine & MCP Server — AST semantic chunking, tri-hybrid retrieval (BM25 + vectors + graph), and grounded LLM synthesis for any repository.",
+  "type": "module",
+  "private": false,
   "workspaces": [
     "packages/*"
   ],
+  "bin": {
+    "cortex-rag": "./packages/cli/dist/launcher.js",
+    "cortex-mcp": "./packages/mcp/dist/stdio.js"
+  },
   "scripts": {
     "build": "npm run build --workspace=@cortex/core && npm run build --workspace=@cortex/api && npm run build --workspace=@cortex/mcp && npm run build --workspace=@cortex/cli && npm run build --workspace=@cortex/web",
+    "postinstall": "node scripts/postinstall.js",
+    "prepublishOnly": "npm run build",
     "dev:api": "npm run dev --workspace=@cortex/api",
     "dev:web": "npm run dev --workspace=@cortex/web",
     "dev:cli": "npm run dev --workspace=@cortex/cli",
@@ -15,6 +22,57 @@
     "test": "node packages/core/dist/test/integration.test.js",
     "benchmark": "node packages/cli/dist/bin.js eval",
     "typecheck": "tsc -b"
+  },
+  "keywords": [
+    "codebase-intelligence",
+    "code-search",
+    "mcp",
+    "model-context-protocol",
+    "rag",
+    "ast",
+    "hybrid-retrieval",
+    "code-analysis",
+    "embeddings",
+    "vector-search",
+    "bm25",
+    "dependency-graph",
+    "llm",
+    "groq",
+    "tree-sitter",
+    "claude",
+    "cursor",
+    "windsurf",
+    "code-rag"
+  ],
+  "author": "Akshay Ravikanti <ravikantia@iitbhilai.ac.in>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RavikantiAkshay/Cortex.git"
+  },
+  "homepage": "https://github.com/RavikantiAkshay/Cortex#readme",
+  "bugs": {
+    "url": "https://github.com/RavikantiAkshay/Cortex/issues"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.2.14",
+    "@fastify/cors": "^10.0.2",
+    "@fastify/static": "^10.1.5",
+    "@modelcontextprotocol/sdk": "^1.6.1",
+    "@qdrant/js-client-rest": "^1.13.0",
+    "@xenova/transformers": "^2.17.2",
+    "bullmq": "^5.41.6",
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "dotenv": "^16.4.7",
+    "fastify": "^5.2.1",
+    "groq-sdk": "^0.15.0",
+    "ioredis": "^5.5.0",
+    "ora": "^8.2.0",
+    "pg": "^8.13.1",
+    "uuid": "^11.1.0",
+    "web-tree-sitter": "^0.22.6",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
     "typescript": "^5.7.3",
@@ -24,5 +82,14 @@
   },
   "engines": {
     "node": ">=20.0.0"
-  }
+  },
+  "files": [
+    "packages/*/dist/**",
+    "packages/*/package.json",
+    "scripts/postinstall.js",
+    ".env.example",
+    "docker-compose.yml",
+    "README.md",
+    "LICENSE"
+  ]
 }

@@ -5,6 +5,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import dotenv from 'dotenv';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import {
   getDatabase,
@@ -23,7 +24,10 @@ import {
 } from '@cortex/core';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(os.homedir(), '.cortex-rag', '.env') });
+dotenv.config({ path: path.join(os.homedir(), '.cortex-code', '.env') });
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+
 
 const program = new Command();
 

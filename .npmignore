@@ -1,0 +1,30 @@
+# Source files (dist/ is published, src/ is not needed)
+packages/*/src/
+!packages/web/src/
+
+# TypeScript configs (per-package)
+packages/*/tsconfig.json
+tsconfig.base.json
+
+# Build artifacts
+*.tsbuildinfo
+
+# Dev & local data
+.git/
+.gitignore
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+data/
+node_modules/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Docker (users can grab from repo if needed)
+docker-compose.yml

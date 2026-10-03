@@ -4,6 +4,7 @@ import { z } from 'zod';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import {
   getDatabase,
@@ -17,7 +18,10 @@ import {
 } from '@cortex/core';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(os.homedir(), '.cortex-rag', '.env') });
+dotenv.config({ path: path.join(os.homedir(), '.cortex-code', '.env') });
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+
 
 const db = await getDatabase();
 const vectorStore = await getVectorStore();

@@ -13,6 +13,7 @@
     "@cortex/core": "*",
     "fastify": "^5.2.1",
     "@fastify/cors": "^10.0.2",
+    "@fastify/static": "^10.1.5",
     "bullmq": "^5.41.6",
     "dotenv": "^16.4.7",
     "zod": "^3.24.2"
