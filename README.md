@@ -94,10 +94,20 @@ This starts the unified Cortex server and automatically opens your default brows
 
 | Tab | What It Does |
 |---|---|
-| **Query Studio** | Ask natural-language questions about any indexed repo. Answers stream in real-time with grounded file:line citations, latency metrics, and cache hit/miss indicators. |
-| **AST Architecture Explorer** | Browse the full dependency graph of an indexed repository. View callers, imports, symbol counts, and identify central vs. leaf modules. |
-| **Observability & Benchmarks** | Run the automated 20-question evaluation suite. View aggregate Precision@5, Mean Reciprocal Rank, Groundedness %, and p50/p95 latency. Inspect individual query telemetry logs. |
-| **Repository Manager** | Index new repositories (local paths or Git URLs), view indexed repos, and remove repos you no longer need. |
+| **Code Q&A** | Ask natural-language questions about any indexed repo. Answers stream in real-time with grounded file:line citations, latency metrics, cache hit/miss indicators, and 1-click **Copy Context** to markdown. |
+| **Dependency DAG (Architectural Intelligence)** | Deep AST call graph explorer with **Blast Radius analysis**, **Architectural Foundation Hubs**, **Circular Dependency detection**, deduplicated symbol-level package imports, and repository-wide external dependency inventory. |
+| **Observability** | Run the automated 20-question evaluation suite. View aggregate Precision@5, Mean Reciprocal Rank, Groundedness %, and p50/p95 latency. Inspect query telemetry logs. |
+| **Repositories** | Index new repositories (local paths or Git URLs), trigger instant **Git Diff Sync**, view indexed stats, and remove repos. |
+
+### 🏛️ Architectural Intelligence & Blast Radius Analysis
+
+The **Dependency DAG** tab transforms raw AST relationships into actionable architectural telemetry:
+
+- **Blast Radius & Impact Analysis**: For any selected file, Cortex calculates its direct dependents (callers) and transitive downstream impact across the codebase, classifying refactoring risk (`CRITICAL`, `MODERATE`, `LOW`, or `LEAF`).
+- **Circular Dependency Detection**: Automated cycle detection over the AST call graph that flags recursive import loops (`A ⇄ B`) that cause undefined module exports and initialization bugs at runtime.
+- **Smart Grouping & Deduplication**: Eliminates repetitive package cards. Groups external packages (`Node stdlib` vs `npm`) and local imports with badges and symbol pills (e.g., `[resolve, join, dirname]`).
+- **Architectural Foundation Hubs**: Leaderboard identifying the core anchor files in the codebase that have the highest number of dependent modules.
+- **Repository External Package Inventory**: Full audit table of all third-party libraries and Node.js standard modules with usage frequency and importing files.
 
 ---
 

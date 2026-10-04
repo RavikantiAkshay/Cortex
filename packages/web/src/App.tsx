@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { marked } from 'marked';
 import {
   Brain,
@@ -20,6 +20,10 @@ import {
   ArrowDownLeft,
   Package,
   Copy,
+  AlertTriangle,
+  ShieldCheck,
+  Flame,
+  Boxes,
 } from 'lucide-react';
 
 interface Repo {
@@ -95,6 +99,8 @@ export default function App() {
   const [graphData, setGraphData] = useState<{ nodes: any[]; edges: any[] }>({ nodes: [], edges: [] });
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [graphFilter, setGraphFilter] = useState<string>('');
+  const [dagSubView, setDagSubView] = useState<'inspector' | 'inventory'>('inspector');
+  const [packageFilter, setPackageFilter] = useState<string>('');
 
   // Eval metrics
   const [metrics, setMetrics] = useState<EvalMetrics | null>(null);
@@ -353,11 +359,239 @@ export default function App() {
   };
 
   const selectedRepo = repos.find(r => r.id === selectedRepoId);
-  const selectedNode = graphData.nodes.find(n => n.id === selectedNodeId) || graphData.nodes[0];
-  const outgoingEdges = selectedNode ? graphData.edges.filter(e => e.source === selectedNode.id) : [];
-  const internalImports = outgoingEdges.filter(e => e.target && graphData.nodes.some(n => n.id === e.target));
-  const externalImports = outgoingEdges.filter(e => !e.target || !graphData.nodes.some(n => n.id === e.target));
-  const incomingEdges = selectedNode ? graphData.edges.filter(e => e.target === selectedNode.id) : [];
+
+  // ── Architecture & Dependency Intelligence Calculations ──
+  const {
+    nodeStatsMap,
+    topHubs,
+    circularCycles,
+    globalPackages,
+    selectedNode,
+    selectedNodeStats,
+    internalGrouped,
+    externalGrouped,
+    incomingGrouped,
+  } = useMemo(() => {
+    const nodes = graphData.nodes || [];
+    const edges = graphData.edges || [];
+
+    // 1. Build adjacency maps
+    const outgoingInternal = new Map<string, Set<string>>();
+    const incomingInternal = new Map<string, Set<string>>();
+    const outgoingExternal = new Map<string, Set<string>>();
+
+    for (const e of edges) {
+      if (e.target && nodes.some(n => n.id === e.target)) {
+        if (!outgoingInternal.has(e.source)) outgoingInternal.set(e.source, new Set());
+        outgoingInternal.get(e.source)!.add(e.target);
+
+        if (!incomingInternal.has(e.target)) incomingInternal.set(e.target, new Set());
+        incomingInternal.get(e.target)!.add(e.source);
+      } else {
+        const raw = (e.rawImport || e.symbol || '').trim();
+        if (raw) {
+          if (!outgoingExternal.has(e.source)) outgoingExternal.set(e.source, new Set());
+          outgoingExternal.get(e.source)!.add(raw);
+        }
+      }
+    }
+
+    // 2. Transitive blast radius (BFS from node following callers backwards)
+    const getTransitiveBlastRadius = (startId: string) => {
+      const visited = new Set<string>();
+      const queue = [startId];
+      while (queue.length > 0) {
+        const curr = queue.shift()!;
+        const callers = incomingInternal.get(curr) || new Set();
+        for (const callerId of callers) {
+          if (!visited.has(callerId) && callerId !== startId) {
+            visited.add(callerId);
+            queue.push(callerId);
+          }
+        }
+      }
+      return visited.size;
+    };
+
+    // 3. Stats for every node
+    const statsMap = new Map<string, {
+      directDependents: number;
+      transitiveBlastRadius: number;
+      internalDepsCount: number;
+      externalDepsCount: number;
+      riskLevel: 'CRITICAL' | 'MODERATE' | 'LOW' | 'LEAF';
+    }>();
+
+    for (const node of nodes) {
+      const dependentsCount = (incomingInternal.get(node.id) || new Set()).size;
+      const internalDepsCount = (outgoingInternal.get(node.id) || new Set()).size;
+      const externalDepsCount = (outgoingExternal.get(node.id) || new Set()).size;
+      const transitiveCount = getTransitiveBlastRadius(node.id);
+
+      let riskLevel: 'CRITICAL' | 'MODERATE' | 'LOW' | 'LEAF' = 'LEAF';
+      if (dependentsCount >= 5) riskLevel = 'CRITICAL';
+      else if (dependentsCount >= 2) riskLevel = 'MODERATE';
+      else if (dependentsCount === 1) riskLevel = 'LOW';
+
+      statsMap.set(node.id, {
+        directDependents: dependentsCount,
+        transitiveBlastRadius: transitiveCount,
+        internalDepsCount,
+        externalDepsCount,
+        riskLevel,
+      });
+    }
+
+    // 4. Top Hubs (ranked by direct dependents)
+    const hubs = [...nodes]
+      .map(n => ({
+        ...n,
+        stats: statsMap.get(n.id)!,
+      }))
+      .filter(n => n.stats.directDependents > 0)
+      .sort((a, b) => b.stats.directDependents - a.stats.directDependents)
+      .slice(0, 8);
+
+    // 5. Circular Dependency Detection
+    const cycles: { fileA: string; fileB: string; pathA: string; pathB: string }[] = [];
+    const seenCyclePairs = new Set<string>();
+
+    for (const [sourceId, targets] of outgoingInternal.entries()) {
+      for (const targetId of targets) {
+        if (outgoingInternal.get(targetId)?.has(sourceId)) {
+          const pairKey = [sourceId, targetId].sort().join(':::');
+          if (!seenCyclePairs.has(pairKey)) {
+            seenCyclePairs.add(pairKey);
+            const nodeA = nodes.find(n => n.id === sourceId);
+            const nodeB = nodes.find(n => n.id === targetId);
+            if (nodeA && nodeB) {
+              cycles.push({
+                fileA: nodeA.label,
+                fileB: nodeB.label,
+                pathA: nodeA.path,
+                pathB: nodeB.path,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // 6. Global External Packages Stack
+    const pkgUsageMap = new Map<string, {
+      name: string;
+      isStdLib: boolean;
+      files: Set<string>;
+      symbols: Set<string>;
+    }>();
+
+    for (const e of edges) {
+      if (!e.target || !nodes.some(n => n.id === e.target)) {
+        const raw = (e.rawImport || e.symbol || '').trim();
+        if (!raw || raw.startsWith('.')) continue;
+
+        const pkgName = raw.startsWith('@')
+          ? raw.split('/').slice(0, 2).join('/')
+          : raw.split('/')[0];
+
+        const isStdLib = raw.startsWith('node:') ||
+          ['fs', 'path', 'os', 'child_process', 'crypto', 'url', 'http', 'events', 'stream', 'util', 'readline'].includes(raw);
+
+        if (!pkgUsageMap.has(pkgName)) {
+          pkgUsageMap.set(pkgName, {
+            name: pkgName,
+            isStdLib,
+            files: new Set(),
+            symbols: new Set(),
+          });
+        }
+        const record = pkgUsageMap.get(pkgName)!;
+        const srcNode = nodes.find(n => n.id === e.source);
+        if (srcNode) record.files.add(srcNode.label);
+        if (e.symbol && e.symbol !== raw) record.symbols.add(e.symbol);
+      }
+    }
+
+    const globalPkgsList = Array.from(pkgUsageMap.values())
+      .map(p => ({
+        ...p,
+        fileCount: p.files.size,
+        filesList: Array.from(p.files),
+        symbolsList: Array.from(p.symbols),
+      }))
+      .sort((a, b) => b.fileCount - a.fileCount);
+
+    // 7. Grouped items for the selected node
+    const currNode = nodes.find(n => n.id === selectedNodeId) || nodes[0];
+    const currStats = currNode ? statsMap.get(currNode.id) : null;
+
+    const intMap = new Map<string, { targetNode: any; symbols: Set<string> }>();
+    const extMap = new Map<string, { pkgName: string; isStdLib: boolean; symbols: Set<string> }>();
+    const inMap = new Map<string, { callerNode: any; symbols: Set<string> }>();
+
+    if (currNode) {
+      for (const e of edges) {
+        if (e.source === currNode.id) {
+          if (e.target) {
+            const tNode = nodes.find(n => n.id === e.target);
+            if (tNode) {
+              if (!intMap.has(e.target)) {
+                intMap.set(e.target, { targetNode: tNode, symbols: new Set() });
+              }
+              if (e.symbol) intMap.get(e.target)!.symbols.add(e.symbol);
+            }
+          } else {
+            const raw = (e.rawImport || e.symbol || '').trim();
+            if (raw) {
+              const pkgName = raw.startsWith('.')
+                ? raw
+                : raw.startsWith('@')
+                ? raw.split('/').slice(0, 2).join('/')
+                : raw.split('/')[0];
+              const isStdLib = raw.startsWith('node:') ||
+                ['fs', 'path', 'os', 'child_process', 'crypto', 'url', 'http', 'events', 'stream', 'util', 'readline'].includes(raw);
+
+              if (!extMap.has(pkgName)) {
+                extMap.set(pkgName, { pkgName, isStdLib, symbols: new Set() });
+              }
+              if (e.symbol && e.symbol !== raw) {
+                extMap.get(pkgName)!.symbols.add(e.symbol);
+              }
+            }
+          }
+        } else if (e.target === currNode.id) {
+          const cNode = nodes.find(n => n.id === e.source);
+          if (cNode) {
+            if (!inMap.has(e.source)) {
+              inMap.set(e.source, { callerNode: cNode, symbols: new Set() });
+            }
+            if (e.symbol) inMap.get(e.source)!.symbols.add(e.symbol);
+          }
+        }
+      }
+    }
+
+    return {
+      nodeStatsMap: statsMap,
+      topHubs: hubs,
+      circularCycles: cycles,
+      globalPackages: globalPkgsList,
+      selectedNode: currNode,
+      selectedNodeStats: currStats,
+      internalGrouped: Array.from(intMap.values()).map(i => ({
+        ...i,
+        symbolsList: Array.from(i.symbols),
+      })),
+      externalGrouped: Array.from(extMap.values()).map(e => ({
+        ...e,
+        symbolsList: Array.from(e.symbols),
+      })),
+      incomingGrouped: Array.from(inMap.values()).map(i => ({
+        ...i,
+        symbolsList: Array.from(i.symbols),
+      })),
+    };
+  }, [graphData, selectedNodeId]);
 
   return (
     <div className="cortex-app-root">
@@ -630,14 +864,40 @@ export default function App() {
                 <Info className="w-5 h-5" />
               </div>
               <div className="dag-explanation-text">
-                <h3>What is the Dependency DAG and what does it do?</h3>
+                <h3>Codebase Architecture & Dependency Intelligence</h3>
                 <p>
-                  Standard RAG retrieves code snippets in isolation, causing LLMs to hallucinate missing functions and import statements. 
-                  Cortex builds a directed graph from the code's Abstract Syntax Tree (AST) mapping every import, export, and symbol call. 
-                  During search, Cortex performs <strong>1-2 hop graph traversals</strong> along these edges to automatically pull imported dependencies and caller context into the prompt alongside vector hits.
+                  Cortex analyzes the code's Abstract Syntax Tree (AST) to build a complete directed call graph. 
+                  Inspect module dependencies, assess <strong>Blast Radius</strong> for safe refactorings, detect circular import cycles, 
+                  and audit repository-wide third-party packages.
                 </p>
               </div>
             </div>
+
+            {/* Circular Dependency Check Banner */}
+            {circularCycles.length > 0 ? (
+              <div className="dag-circular-banner alert">
+                <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+                <div>
+                  <strong>{circularCycles.length} Circular Dependency Detected: </strong>
+                  {circularCycles.map((c, i) => (
+                    <span key={i} style={{ fontFamily: 'var(--font-mono)' }}>
+                      <code>{c.fileA}</code> ⇄ <code>{c.fileB}</code>
+                      {i < circularCycles.length - 1 ? ', ' : ''}
+                    </span>
+                  ))}
+                  <span style={{ display: 'block', fontSize: '0.72rem', opacity: 0.85, marginTop: '3px' }}>
+                    Circular imports risk runtime initialization bugs and undefined module exports.
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="dag-circular-banner clean">
+                <ShieldCheck className="w-4 h-4 flex-shrink-0" />
+                <span>
+                  <strong>Clean Architecture:</strong> 0 circular dependencies detected across {graphData.nodes.length} indexed modules.
+                </span>
+              </div>
+            )}
 
             {/* Stats Bar */}
             <div className="dag-stats-bar">
@@ -647,172 +907,427 @@ export default function App() {
               </div>
               <div className="dag-stat-pill">
                 <GitBranch className="w-4 h-4" />
-                <span>Dependency Connections: <strong>{graphData.edges.length}</strong></span>
+                <span>Architectural Connections: <strong>{graphData.edges.length}</strong></span>
               </div>
               <div className="dag-stat-pill">
-                <Database className="w-4 h-4" />
-                <span>Repository: <strong>{selectedRepo?.name || 'None'}</strong></span>
+                <Boxes className="w-4 h-4" />
+                <span>External Libraries: <strong>{globalPackages.length}</strong></span>
+              </div>
+              <div className="dag-stat-pill">
+                <Flame className="w-4 h-4 text-amber-400" />
+                <span>
+                  Core Hub: <strong>{topHubs[0] ? `${topHubs[0].label} (${topHubs[0].stats.directDependents} deps)` : 'None'}</strong>
+                </span>
               </div>
             </div>
 
-            {/* 2-Column Explorer */}
-            <div className="dag-explorer-layout">
-              {/* Left Column: Filterable Module List */}
-              <div className="dag-module-sidebar">
-                <input
-                  type="text"
-                  placeholder="Filter files / modules..."
-                  value={graphFilter}
-                  onChange={e => setGraphFilter(e.target.value)}
-                  className="dag-search-input"
-                />
+            {/* Sub-view Switcher */}
+            <div className="dag-subview-toggle">
+              <button
+                type="button"
+                className={`dag-subview-btn ${dagSubView === 'inspector' ? 'active' : ''}`}
+                onClick={() => setDagSubView('inspector')}
+              >
+                <GitBranch className="w-4 h-4" />
+                <span>Module Inspector & Blast Radius</span>
+              </button>
+              <button
+                type="button"
+                className={`dag-subview-btn ${dagSubView === 'inventory' ? 'active' : ''}`}
+                onClick={() => setDagSubView('inventory')}
+              >
+                <Boxes className="w-4 h-4" />
+                <span>Repo Package Inventory & Hubs ({globalPackages.length})</span>
+              </button>
+            </div>
 
-                <div className="dag-module-list">
-                  {graphData.nodes.length === 0 ? (
-                    <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', padding: '16px', textAlign: 'center' }}>
-                      No indexed modules found. Select a repository from the header dropdown.
-                    </div>
-                  ) : (
-                    graphData.nodes
-                      .filter(n => n.label.toLowerCase().includes(graphFilter.toLowerCase()) || n.path.toLowerCase().includes(graphFilter.toLowerCase()))
-                      .map(node => {
-                        const edgeCount = graphData.edges.filter(e => e.source === node.id || e.target === node.id).length;
-                        const isSelected = (selectedNode?.id === node.id);
-                        return (
-                          <button
-                            key={node.id}
-                            type="button"
-                            onClick={() => setSelectedNodeId(node.id)}
-                            className={`dag-module-btn ${isSelected ? 'active' : ''}`}
-                          >
-                            <div className="dag-module-label">
-                              <span>{node.label}</span>
-                              <span className="dag-badge-pill">{edgeCount} deps</span>
-                            </div>
-                            <div className="dag-module-sub">{node.path}</div>
-                          </button>
-                        );
-                      })
-                  )}
+            {/* SUB-VIEW 1: Deep Module Inspector & Blast Radius */}
+            {dagSubView === 'inspector' && (
+              <div className="dag-explorer-layout">
+                {/* Left Column: Filterable Module List */}
+                <div className="dag-module-sidebar">
+                  <input
+                    type="text"
+                    placeholder="Filter files / modules..."
+                    value={graphFilter}
+                    onChange={e => setGraphFilter(e.target.value)}
+                    className="dag-search-input"
+                  />
+
+                  <div className="dag-module-list">
+                    {graphData.nodes.length === 0 ? (
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', padding: '16px', textAlign: 'center' }}>
+                        No indexed modules found. Select a repository from the header dropdown.
+                      </div>
+                    ) : (
+                      graphData.nodes
+                        .filter(n => n.label.toLowerCase().includes(graphFilter.toLowerCase()) || n.path.toLowerCase().includes(graphFilter.toLowerCase()))
+                        .map(node => {
+                          const stats = nodeStatsMap.get(node.id);
+                          const isSelected = (selectedNode?.id === node.id);
+                          const isHub = stats && stats.directDependents >= 3;
+                          return (
+                            <button
+                              key={node.id}
+                              type="button"
+                              onClick={() => setSelectedNodeId(node.id)}
+                              className={`dag-module-btn ${isSelected ? 'active' : ''}`}
+                            >
+                              <div className="dag-module-label">
+                                <span>{node.label}</span>
+                                <span className="dag-badge-pill" style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                  {isHub && <Flame className="w-3 h-3 text-amber-400" />}
+                                  <span>{stats?.directDependents || 0} callers</span>
+                                </span>
+                              </div>
+                              <div className="dag-module-sub">{node.path}</div>
+                            </button>
+                          );
+                        })
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              {/* Right Column: Deep Dependency Inspector */}
-              <div className="dag-inspector-panel">
-                {selectedNode ? (
-                  <>
-                    <div className="dag-inspector-header">
+                {/* Right Column: Deep Dependency & Blast Radius Inspector */}
+                <div className="dag-inspector-panel">
+                  {selectedNode ? (
+                    <>
+                      <div className="dag-inspector-header">
+                        <div style={{ flex: 1 }}>
+                          <div className="dag-inspector-title">
+                            <FileCode className="w-6 h-6" />
+                            <span>{selectedNode.label}</span>
+                          </div>
+                          <div className="dag-inspector-sub">{selectedNode.path}</div>
+                          <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                            <span className="dag-badge-pill">{selectedNode.lines} lines</span>
+                            <span className="dag-badge-pill">{selectedNode.language}</span>
+                          </div>
+
+                          {/* Blast Radius Box */}
+                          {selectedNodeStats && (
+                            <div className="dag-blast-box">
+                              <div className="dag-blast-metric-group">
+                                <div className="dag-blast-item">
+                                  <span className="dag-blast-num">{selectedNodeStats.directDependents}</span>
+                                  <span className="dag-blast-label">Direct Dependents</span>
+                                </div>
+                                <div className="dag-blast-item">
+                                  <span className="dag-blast-num">{selectedNodeStats.transitiveBlastRadius}</span>
+                                  <span className="dag-blast-label">Transitive Impact</span>
+                                </div>
+                                <div className="dag-blast-item">
+                                  <span className="dag-blast-num">{internalGrouped.length}</span>
+                                  <span className="dag-blast-label">Local Imports</span>
+                                </div>
+                                <div className="dag-blast-item">
+                                  <span className="dag-blast-num">{externalGrouped.length}</span>
+                                  <span className="dag-blast-label">External Pkgs</span>
+                                </div>
+                              </div>
+
+                              <div>
+                                <span className={`dag-risk-pill ${selectedNodeStats.riskLevel.toLowerCase()}`}>
+                                  {selectedNodeStats.riskLevel === 'CRITICAL' && <AlertTriangle className="w-3.5 h-3.5" />}
+                                  {selectedNodeStats.riskLevel === 'MODERATE' && <Flame className="w-3.5 h-3.5" />}
+                                  <span>{selectedNodeStats.riskLevel} BLAST RADIUS</span>
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          className="dag-query-module-btn"
+                          onClick={() => {
+                            const prompt = `Explain the architectural purpose, dependencies, and blast radius of ${selectedNode.label} (${selectedNode.path})`;
+                            setActiveTab('query');
+                            handleRunQuery(prompt);
+                          }}
+                        >
+                          <Search className="w-3.5 h-3.5" />
+                          <span>Query With Cortex</span>
+                        </button>
+                      </div>
+
+                      {/* Section 1: Outgoing Internal Modules (Grouped) */}
                       <div>
-                        <div className="dag-inspector-title">
-                          <FileCode className="w-6 h-6" />
-                          <span>{selectedNode.label}</span>
+                        <div className="dag-section-title">
+                          <ArrowUpRight className="w-4 h-4" />
+                          <span>Internal Codebase Imports ({internalGrouped.length} modules)</span>
                         </div>
-                        <div className="dag-inspector-sub">{selectedNode.path}</div>
-                        <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                          <span className="dag-badge-pill">{selectedNode.lines} lines</span>
-                          <span className="dag-badge-pill">{selectedNode.language}</span>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        className="dag-query-module-btn"
-                        onClick={() => {
-                          const prompt = `Explain the architectural purpose, dependencies, and responsibilities of ${selectedNode.label}`;
-                          setActiveTab('query');
-                          handleRunQuery(prompt);
-                        }}
-                      >
-                        <Search className="w-3.5 h-3.5" />
-                        <span>Query With Cortex</span>
-                      </button>
-                    </div>
-
-                    {/* Section 1: Outgoing Dependencies (What this file imports) */}
-                    <div>
-                      <div className="dag-section-title">
-                        <ArrowUpRight className="w-4 h-4" />
-                        <span>Dependencies / Imports ({internalImports.length + externalImports.length})</span>
-                      </div>
-                      
-                      {internalImports.length === 0 && externalImports.length === 0 ? (
-                        <div className="dag-empty-box">This file has no external imports or module dependencies.</div>
-                      ) : (
-                        <div className="dag-edge-grid">
-                          {internalImports.map((edge, idx) => {
-                            const targetNode = graphData.nodes.find(n => n.id === edge.target);
-                            return (
+                        
+                        {internalGrouped.length === 0 ? (
+                          <div className="dag-empty-box">This file does not import any other internal modules.</div>
+                        ) : (
+                          <div className="dag-edge-grid">
+                            {internalGrouped.map((item, idx) => (
                               <div
                                 key={idx}
                                 className="dag-edge-card"
-                                onClick={() => targetNode && setSelectedNodeId(targetNode.id)}
+                                onClick={() => setSelectedNodeId(item.targetNode.id)}
                                 title="Click to inspect module"
                               >
                                 <div className="dag-edge-name">
                                   <FileCode className="w-3.5 h-3.5" />
-                                  <span>{targetNode ? targetNode.label : 'Internal Module'}</span>
+                                  <span>{item.targetNode.label}</span>
                                 </div>
                                 <div className="dag-edge-symbol">
-                                  {edge.symbol ? `calls: ${edge.symbol}` : edge.rawImport || 'module import'}
+                                  {item.targetNode.path}
                                 </div>
+                                {item.symbolsList.length > 0 && (
+                                  <div className="dag-symbols-wrap">
+                                    {item.symbolsList.slice(0, 4).map((sym, sIdx) => (
+                                      <span key={sIdx} className="dag-symbol-pill">{sym}</span>
+                                    ))}
+                                    {item.symbolsList.length > 4 && (
+                                      <span className="dag-symbol-pill" style={{ opacity: 0.7 }}>
+                                        +{item.symbolsList.length - 4} more
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
                               </div>
-                            );
-                          })}
-
-                          {externalImports.map((edge, idx) => (
-                            <div key={`ext-${idx}`} className="dag-edge-card" style={{ opacity: 0.85 }}>
-                              <div className="dag-edge-name">
-                                <Package className="w-3.5 h-3.5" />
-                                <span>{edge.rawImport || edge.symbol || 'external'}</span>
-                              </div>
-                              <div className="dag-edge-symbol">external dependency</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Section 2: Incoming Dependents (What files import this) */}
-                    <div>
-                      <div className="dag-section-title">
-                        <ArrowDownLeft className="w-4 h-4" />
-                        <span>Dependents / Imported By ({incomingEdges.length})</span>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
-                      {incomingEdges.length === 0 ? (
-                        <div className="dag-empty-box">No other local modules directly import this file (it may be an entry point or route handler).</div>
-                      ) : (
-                        <div className="dag-edge-grid">
-                          {incomingEdges.map((edge, idx) => {
-                            const sourceNode = graphData.nodes.find(n => n.id === edge.source);
-                            return (
+                      {/* Section 2: Outgoing External Dependencies (Deduplicated & Grouped by package) */}
+                      <div>
+                        <div className="dag-section-title">
+                          <Package className="w-4 h-4" />
+                          <span>External Libraries & Stdlib ({externalGrouped.length} unique packages)</span>
+                        </div>
+
+                        {externalGrouped.length === 0 ? (
+                          <div className="dag-empty-box">This file has no external dependencies.</div>
+                        ) : (
+                          <div className="dag-edge-grid">
+                            {externalGrouped.map((pkg, idx) => (
+                              <div key={idx} className="dag-edge-card" style={{ cursor: 'default' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                  <div className="dag-edge-name">
+                                    <Package className="w-3.5 h-3.5" />
+                                    <span>{pkg.pkgName}</span>
+                                  </div>
+                                  <span className={`dag-pkg-badge ${pkg.isStdLib ? 'stdlib' : 'npm'}`}>
+                                    {pkg.isStdLib ? 'Node stdlib' : 'npm'}
+                                  </span>
+                                </div>
+
+                                {pkg.symbolsList.length > 0 ? (
+                                  <div className="dag-symbols-wrap">
+                                    {pkg.symbolsList.slice(0, 5).map((sym, sIdx) => (
+                                      <span key={sIdx} className="dag-symbol-pill">{sym}</span>
+                                    ))}
+                                    {pkg.symbolsList.length > 5 && (
+                                      <span className="dag-symbol-pill" style={{ opacity: 0.7 }}>
+                                        +{pkg.symbolsList.length - 5} more
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="dag-edge-symbol">full module import</div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Section 3: Incoming Dependents (What files import this) */}
+                      <div>
+                        <div className="dag-section-title">
+                          <ArrowDownLeft className="w-4 h-4" />
+                          <span>Direct Dependents / Callers ({incomingGrouped.length} caller files)</span>
+                        </div>
+
+                        {incomingGrouped.length === 0 ? (
+                          <div className="dag-empty-box">
+                            No other internal modules directly import this file (it is an entry point, script, or route handler).
+                          </div>
+                        ) : (
+                          <div className="dag-edge-grid">
+                            {incomingGrouped.map((item, idx) => (
                               <div
                                 key={idx}
                                 className="dag-edge-card"
-                                onClick={() => sourceNode && setSelectedNodeId(sourceNode.id)}
+                                onClick={() => setSelectedNodeId(item.callerNode.id)}
                                 title="Click to inspect caller module"
                               >
                                 <div className="dag-edge-name">
                                   <FileCode className="w-3.5 h-3.5" />
-                                  <span>{sourceNode ? sourceNode.label : 'Caller Module'}</span>
+                                  <span>{item.callerNode.label}</span>
                                 </div>
                                 <div className="dag-edge-symbol">
-                                  {sourceNode?.path || 'source file'}
+                                  {item.callerNode.path}
                                 </div>
+                                {item.symbolsList.length > 0 && (
+                                  <div className="dag-symbols-wrap">
+                                    {item.symbolsList.slice(0, 3).map((sym, sIdx) => (
+                                      <span key={sIdx} className="dag-symbol-pill">uses {sym}</span>
+                                    ))}
+                                    {item.symbolsList.length > 3 && (
+                                      <span className="dag-symbol-pill" style={{ opacity: 0.7 }}>
+                                        +{item.symbolsList.length - 3} more
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
                               </div>
-                            );
-                          })}
-                        </div>
-                      )}
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text-muted)' }}>
+                      Select a module from the left list to inspect its AST dependency graph.
                     </div>
-                  </>
-                ) : (
-                  <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    Select a module from the left list to inspect its AST dependency graph.
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-            </div>
+            )}
+
+            {/* SUB-VIEW 2: Global Package Inventory & Architectural Hubs */}
+            {dagSubView === 'inventory' && (
+              <div>
+                {/* Top Section: Architectural Foundation Hubs */}
+                <div style={{ marginBottom: '28px' }}>
+                  <div style={{ marginBottom: '14px' }}>
+                    <h3 style={{ fontSize: '0.96rem', fontWeight: 700, color: '#ffffff', margin: 0 }}>
+                      Architectural Foundation Hubs (Highest Blast Radius)
+                    </h3>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+                      These files are the most depended-on modules across the codebase. Breaking changes here have the highest downstream impact.
+                    </p>
+                  </div>
+
+                  <div className="dag-hubs-grid">
+                    {topHubs.map(hub => (
+                      <div
+                        key={hub.id}
+                        className="dag-hub-card"
+                        onClick={() => {
+                          setSelectedNodeId(hub.id);
+                          setDagSubView('inspector');
+                        }}
+                      >
+                        <div>
+                          <div className="dag-hub-header">
+                            <span className="dag-hub-name">
+                              <FileCode className="w-4 h-4 text-white" />
+                              <span>{hub.label}</span>
+                            </span>
+                            <span className={`dag-risk-pill ${hub.stats.riskLevel.toLowerCase()}`}>
+                              {hub.stats.riskLevel}
+                            </span>
+                          </div>
+                          <div className="dag-hub-path">{hub.path}</div>
+                        </div>
+
+                        <div className="dag-hub-stats-row">
+                          <div style={{ display: 'flex', gap: '16px' }}>
+                            <div>
+                              <div style={{ fontSize: '1rem', fontWeight: 800, color: '#ffffff' }}>{hub.stats.directDependents}</div>
+                              <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Callers</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '1rem', fontWeight: 800, color: '#ffffff' }}>{hub.stats.transitiveBlastRadius}</div>
+                              <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Transitive</div>
+                            </div>
+                          </div>
+                          <span style={{ fontSize: '0.72rem', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span>Inspect</span>
+                            <ArrowRight className="w-3 h-3" />
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Bottom Section: Global Package Stack */}
+                <div className="cortex-card" style={{ padding: '22px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '12px' }}>
+                    <div>
+                      <h3 style={{ fontSize: '0.96rem', fontWeight: 700, color: '#ffffff', margin: 0 }}>
+                        Repository-Wide External Package Inventory
+                      </h3>
+                      <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+                        All 3rd-party npm packages and Node.js standard library modules used across {selectedRepo?.name || 'the repository'}.
+                      </p>
+                    </div>
+
+                    <input
+                      type="text"
+                      placeholder="Filter external packages..."
+                      value={packageFilter}
+                      onChange={e => setPackageFilter(e.target.value)}
+                      className="dag-search-input"
+                      style={{ width: '260px', margin: 0 }}
+                    />
+                  </div>
+
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="dag-inventory-table">
+                      <thead>
+                        <tr>
+                          <th>Package Name</th>
+                          <th>Classification</th>
+                          <th>Usage Count</th>
+                          <th>Importing Modules</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {globalPackages
+                          .filter(p => p.name.toLowerCase().includes(packageFilter.toLowerCase()))
+                          .map((pkg, idx) => (
+                            <tr key={idx} className="dag-inventory-row">
+                              <td style={{ fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#ffffff' }}>
+                                {pkg.name}
+                              </td>
+                              <td>
+                                <span className={`dag-pkg-badge ${pkg.isStdLib ? 'stdlib' : 'npm'}`}>
+                                  {pkg.isStdLib ? 'Node stdlib' : 'npm'}
+                                </span>
+                              </td>
+                              <td style={{ fontWeight: 700, color: '#ffffff' }}>
+                                Used in {pkg.fileCount} {pkg.fileCount === 1 ? 'file' : 'files'}
+                              </td>
+                              <td>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                  {pkg.filesList.map((fName, fIdx) => {
+                                    const matchingNode = graphData.nodes.find(n => n.label === fName);
+                                    return (
+                                      <button
+                                        key={fIdx}
+                                        type="button"
+                                        onClick={() => {
+                                          if (matchingNode) {
+                                            setSelectedNodeId(matchingNode.id);
+                                            setDagSubView('inspector');
+                                          }
+                                        }}
+                                        className="dag-symbol-pill"
+                                        style={{ cursor: matchingNode ? 'pointer' : 'default', border: '1px solid var(--border)' }}
+                                      >
+                                        {fName}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
