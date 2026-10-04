@@ -78,6 +78,12 @@ export default function App() {
   const answerContentRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState<boolean>(false);
   const [syncingRepoId, setSyncingRepoId] = useState<string | null>(null);
+  const [syncNotice, setSyncNotice] = useState<{
+    message: string;
+    hasChanges: boolean;
+    files: string[];
+    durationMs: number;
+  } | null>(null);
 
   useEffect(() => {
     if (isQuerying && answerContentRef.current) {
@@ -206,7 +212,22 @@ export default function App() {
     try {
       const res = await fetch(`/api/v1/repos/${repoIdToSync}/sync`, { method: 'POST' });
       if (res.ok) {
+        const json = await res.json();
+        const repo = json.data;
         await fetchRepos();
+        if (repo?.syncStats) {
+          setSyncNotice({
+            message: repo.syncStats.message,
+            hasChanges: repo.syncStats.hasChanges,
+            files: [
+              ...repo.syncStats.modifiedFiles,
+              ...repo.syncStats.addedFiles,
+              ...repo.syncStats.deletedFiles,
+            ],
+            durationMs: repo.syncStats.durationMs,
+          });
+          setTimeout(() => setSyncNotice(null), 6000);
+        }
         if (repoIdToSync === selectedRepoId) {
           const gRes = await fetch(`/api/v1/repos/${repoIdToSync}/graph`);
           if (gRes.ok) {
@@ -419,6 +440,26 @@ export default function App() {
 
       {/* Main Body */}
       <main className="main-wrapper">
+        {/* Sync Toast Notification */}
+        {syncNotice && (
+          <div className={`sync-toast-banner ${syncNotice.hasChanges ? 'changes' : 'no-changes'}`}>
+            <div className="sync-toast-left">
+              <Zap className="w-4 h-4" />
+              <span className="sync-toast-title">Git Diff Sync</span>
+              <span className="sync-toast-msg">{syncNotice.message}</span>
+            </div>
+            {syncNotice.files.length > 0 && (
+              <div className="sync-toast-files">
+                {syncNotice.files.slice(0, 3).map((f, i) => (
+                  <span key={i} className="sync-file-tag">{f}</span>
+                ))}
+                {syncNotice.files.length > 3 && (
+                  <span className="sync-file-tag">+{syncNotice.files.length - 3} more</span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         {/* Tab 1: Code Q&A Playground */}
         {activeTab === 'query' && (
           <div>

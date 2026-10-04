@@ -212,6 +212,7 @@ export class IndexerCoordinator {
       throw new Error(`Repository directory ${localDir} does not exist on disk.`);
     }
 
+    const startTime = Date.now();
     onProgress?.('Analyzing repository changes via Git diff...', 10);
     const isGit = GitUtils.isGitRepo(localDir);
     const currentCommit = isGit ? GitUtils.getCurrentCommit(localDir) : null;
@@ -223,7 +224,8 @@ export class IndexerCoordinator {
     if (isGit) {
       const diff = GitUtils.getDiffFiles(localDir, repoRecord.commit_hash);
       if (!diff.hasChanges) {
-        onProgress?.('Repository is up-to-date! 0 files modified (0ms).', 100);
+        const durationMs = Date.now() - startTime;
+        onProgress?.(`Repository is up-to-date! 0 files modified (${durationMs}ms).`, 100);
         const now = new Date();
         await this.db.query(
           `UPDATE repositories SET indexed_at = $1, updated_at = $1 WHERE id = $2`,
@@ -242,6 +244,16 @@ export class IndexerCoordinator {
           indexedAt: now,
           createdAt: repoRecord.created_at,
           updatedAt: now,
+          syncStats: {
+            isGit: true,
+            hasChanges: false,
+            modifiedFiles: [],
+            addedFiles: [],
+            deletedFiles: [],
+            chunksUpdated: 0,
+            durationMs,
+            message: `Git diff: 0 files modified — repository is already up to date (${durationMs}ms)`,
+          },
         };
       }
       addedPaths = diff.addedFiles;
@@ -274,7 +286,8 @@ export class IndexerCoordinator {
       }
 
       if (addedPaths.length === 0 && modifiedPaths.length === 0 && deletedPaths.length === 0) {
-        onProgress?.('Repository is up-to-date! 0 files modified.', 100);
+        const durationMs = Date.now() - startTime;
+        onProgress?.(`Repository is up-to-date! 0 files modified (${durationMs}ms).`, 100);
         const now = new Date();
         await this.db.query(
           `UPDATE repositories SET indexed_at = $1, updated_at = $1 WHERE id = $2`,
@@ -293,6 +306,16 @@ export class IndexerCoordinator {
           indexedAt: now,
           createdAt: repoRecord.created_at,
           updatedAt: now,
+          syncStats: {
+            isGit: false,
+            hasChanges: false,
+            modifiedFiles: [],
+            addedFiles: [],
+            deletedFiles: [],
+            chunksUpdated: 0,
+            durationMs,
+            message: `Content hash: 0 files modified — repository is already up to date (${durationMs}ms)`,
+          },
         };
       }
     }
@@ -435,6 +458,7 @@ export class IndexerCoordinator {
       100
     );
 
+    const durationMs = Date.now() - startTime;
     return {
       id: repoId,
       name: repoRecord.name,
@@ -448,6 +472,16 @@ export class IndexerCoordinator {
       indexedAt: now,
       createdAt: repoRecord.created_at,
       updatedAt: now,
+      syncStats: {
+        isGit,
+        hasChanges: true,
+        modifiedFiles: modifiedPaths,
+        addedFiles: addedPaths,
+        deletedFiles: deletedPaths,
+        chunksUpdated: newChunks.length,
+        durationMs,
+        message: `Synced ${modifiedPaths.length} modified, ${addedPaths.length} added, ${deletedPaths.length} deleted (${newChunks.length} chunks updated in ${durationMs}ms)`,
+      },
     };
   }
 

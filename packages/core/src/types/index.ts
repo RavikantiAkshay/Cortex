@@ -1,21 +1,32 @@
-export type LanguageId = 
-  | 'typescript' 
-  | 'javascript' 
-  | 'python' 
-  | 'go' 
-  | 'rust' 
-  | 'java' 
+export type LanguageId =
+  | 'typescript'
+  | 'javascript'
+  | 'python'
+  | 'go'
+  | 'rust'
+  | 'java'
   | 'unknown';
 
-export type SymbolKind = 
-  | 'function' 
-  | 'method' 
-  | 'class' 
-  | 'interface' 
-  | 'type' 
-  | 'variable' 
-  | 'import' 
+export type SymbolKind =
+  | 'function'
+  | 'method'
+  | 'class'
+  | 'interface'
+  | 'type'
+  | 'variable'
+  | 'import'
   | 'export';
+
+export interface SyncStats {
+  isGit: boolean;
+  hasChanges: boolean;
+  modifiedFiles: string[];
+  addedFiles: string[];
+  deletedFiles: string[];
+  chunksUpdated: number;
+  durationMs: number;
+  message: string;
+}
 
 export interface Repository {
   id: string;
@@ -30,6 +41,7 @@ export interface Repository {
   totalChunks: number;
   createdAt: Date;
   updatedAt: Date;
+  syncStats?: SyncStats;
 }
 
 export interface SourceFile {

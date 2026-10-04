@@ -425,6 +425,62 @@ code, pre {
   cursor: not-allowed;
 }
 
+.sync-toast-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 18px;
+  margin: 14px 0 20px 0;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.sync-toast-banner.no-changes {
+  background: #141418;
+  border: 1px solid var(--border-light);
+  color: #e4e4e7;
+}
+.sync-toast-banner.changes {
+  background: #16181f;
+  border: 1px solid #ffffff;
+  color: #ffffff;
+}
+.sync-toast-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sync-toast-title {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #27272a;
+  color: #ffffff;
+}
+.sync-toast-msg {
+  color: #d4d4d8;
+  font-size: 0.8rem;
+}
+.sync-toast-files {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.sync-file-tag {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  background: #27272a;
+  border: 1px solid var(--border);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #ffffff;
+}
+
 /* ── Markdown Answer Styling (Generous Line Spacing & Airy Flow) ── */
 .answer-body {
   font-size: 1rem;

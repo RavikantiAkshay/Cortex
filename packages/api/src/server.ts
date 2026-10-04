@@ -144,9 +144,16 @@ fastify.post<{
 }>('/api/v1/repos/:id/sync', async (request, reply) => {
   const { id } = request.params;
   try {
-    const repo = await indexer.syncRepository(id);
+    console.log(`\n⚡ [Cortex Sync] Initiating incremental sync for repo ${id}...`);
+    const repo = await indexer.syncRepository(id, (step, pct) => {
+      console.log(`   [${pct}%] ${step}`);
+    });
+    if (repo.syncStats) {
+      console.log(`✅ [Cortex Sync] ${repo.syncStats.message}\n`);
+    }
     return reply.status(200).send({ data: repo });
   } catch (err: any) {
+    console.error(`❌ [Cortex Sync Error] ${err.message}`);
     fastify.log.error(err);
     return reply.status(500).send({ error: { message: err.message } });
   }
