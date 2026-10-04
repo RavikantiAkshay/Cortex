@@ -15,6 +15,7 @@ import {
   GraphSearcher,
   HybridRetriever,
   DependencyGraphBuilder,
+  IndexerCoordinator,
 } from '../../core/dist/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -32,6 +33,7 @@ const keywordSearcher = new KeywordSearcher(db);
 const graphSearcher = new GraphSearcher(db);
 const hybridRetriever = new HybridRetriever(vectorSearcher, keywordSearcher, graphSearcher);
 const depGraphBuilder = new DependencyGraphBuilder(db);
+const indexer = new IndexerCoordinator(db, vectorStore, embeddingProvider);
 
 const server = new McpServer({
   name: process.env.MCP_SERVER_NAME || 'cortex-mcp',
@@ -144,6 +146,75 @@ server.tool(
       return {
         isError: true,
         content: [{ type: 'text', text: `Trace deps error: ${e.message}` }],
+      };
+    }
+  }
+);
+
+// Tool 5: index_repository
+server.tool(
+  'index_repository',
+  'Indexes a local directory or remote Git URL into Cortex. Performs automatic incremental Git diff sync if already indexed.',
+  {
+    path: z.string().describe('Absolute local directory path or remote Git URL'),
+    name: z.string().optional().describe('Optional repository name'),
+  },
+  async ({ path: repoPath, name }) => {
+    try {
+      const repo = await indexer.indexRepository(repoPath, name);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              id: repo.id,
+              name: repo.name,
+              total_files: repo.totalFiles,
+              total_chunks: repo.totalChunks,
+              commit_hash: repo.commitHash,
+              status: repo.status,
+            }, null, 2),
+          },
+        ],
+      };
+    } catch (e: any) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: `Index error: ${e.message}` }],
+      };
+    }
+  }
+);
+
+// Tool 6: sync_repository
+server.tool(
+  'sync_repository',
+  'Incrementally syncs an already indexed repository using Git diff in milliseconds',
+  {
+    repo_id: z.string().describe('Repository UUID to sync'),
+  },
+  async ({ repo_id }) => {
+    try {
+      const repo = await indexer.syncRepository(repo_id);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              id: repo.id,
+              name: repo.name,
+              total_files: repo.totalFiles,
+              total_chunks: repo.totalChunks,
+              commit_hash: repo.commitHash,
+              status: repo.status,
+            }, null, 2),
+          },
+        ],
+      };
+    } catch (e: any) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: `Sync error: ${e.message}` }],
       };
     }
   }

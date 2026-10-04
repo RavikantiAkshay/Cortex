@@ -137,6 +137,41 @@ export class FileCrawler {
     return results;
   }
 
+  static readSingleFile(repoId: string, baseDir: string, relPath: string, maxFileSizeKb = 500): CrawledFile | null {
+    const fullPath = path.resolve(baseDir, relPath);
+    if (!fs.existsSync(fullPath)) return null;
+
+    const ext = path.extname(relPath).toLowerCase();
+    if (DEFAULT_IGNORED_EXTS.has(ext)) return null;
+
+    const lang = detectLanguage(relPath);
+    if (!isSupportedLanguage(lang)) return null;
+
+    try {
+      const stats = fs.statSync(fullPath);
+      if (stats.size > maxFileSizeKb * 1024 || stats.size === 0) return null;
+
+      const content = fs.readFileSync(fullPath, 'utf-8');
+      const lines = content.split('\n').length;
+      const contentHash = computeHash(content);
+
+      const sourceFile: SourceFile = {
+        id: uuidv4(),
+        repoId,
+        path: relPath.replace(/\\/g, '/'),
+        language: lang,
+        lineCount: lines,
+        sizeBytes: stats.size,
+        contentHash,
+        createdAt: new Date(),
+      };
+
+      return { file: sourceFile, content };
+    } catch {
+      return null;
+    }
+  }
+
   static cloneGitRepo(gitUrl: string, targetDir: string): string {
     if (fs.existsSync(targetDir)) {
       fs.rmSync(targetDir, { recursive: true, force: true });
@@ -144,5 +179,124 @@ export class FileCrawler {
     fs.mkdirSync(targetDir, { recursive: true });
     execSync(`git clone --depth 1 "${gitUrl}" "${targetDir}"`, { stdio: 'pipe' });
     return targetDir;
+  }
+}
+
+export interface GitDiffResult {
+  isGitRepo: boolean;
+  currentCommit: string | null;
+  hasChanges: boolean;
+  addedFiles: string[];
+  modifiedFiles: string[];
+  deletedFiles: string[];
+}
+
+export class GitUtils {
+  static isGitRepo(dir: string): boolean {
+    if (!fs.existsSync(dir)) return false;
+    try {
+      const res = execSync('git rev-parse --is-inside-work-tree', {
+        cwd: dir,
+        stdio: 'pipe',
+        encoding: 'utf-8',
+      }).trim();
+      return res === 'true';
+    } catch {
+      return false;
+    }
+  }
+
+  static getCurrentCommit(dir: string): string | null {
+    if (!this.isGitRepo(dir)) return null;
+    try {
+      return execSync('git rev-parse HEAD', {
+        cwd: dir,
+        stdio: 'pipe',
+        encoding: 'utf-8',
+      }).trim();
+    } catch {
+      return null;
+    }
+  }
+
+  static getDiffFiles(dir: string, baseCommit?: string | null): GitDiffResult {
+    if (!this.isGitRepo(dir)) {
+      return {
+        isGitRepo: false,
+        currentCommit: null,
+        hasChanges: false,
+        addedFiles: [],
+        modifiedFiles: [],
+        deletedFiles: [],
+      };
+    }
+
+    const currentCommit = this.getCurrentCommit(dir);
+    const addedFiles = new Set<string>();
+    const modifiedFiles = new Set<string>();
+    const deletedFiles = new Set<string>();
+
+    // 1. If baseCommit is provided and valid, check committed diff between baseCommit and HEAD
+    if (baseCommit && baseCommit !== currentCommit) {
+      try {
+        const diffOutput = execSync(`git diff --name-status "${baseCommit}" HEAD`, {
+          cwd: dir,
+          stdio: 'pipe',
+          encoding: 'utf-8',
+        }).trim();
+        if (diffOutput) {
+          const lines = diffOutput.split('\n');
+          for (const line of lines) {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length >= 2) {
+              const status = parts[0][0]; // 'M', 'A', 'D', 'R'
+              const filePath = parts[parts.length - 1].replace(/\\/g, '/');
+              if (status === 'A') addedFiles.add(filePath);
+              else if (status === 'D') deletedFiles.add(filePath);
+              else modifiedFiles.add(filePath);
+            }
+          }
+        }
+      } catch {
+        // Fallback to working status if baseCommit is not in branch history
+      }
+    }
+
+    // 2. Also check uncommitted working directory changes (staged + unstaged + untracked)
+    try {
+      const statusOutput = execSync('git status --porcelain', {
+        cwd: dir,
+        stdio: 'pipe',
+        encoding: 'utf-8',
+      }).trim();
+      if (statusOutput) {
+        const lines = statusOutput.split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          const status = trimmed.slice(0, 2);
+          const filePath = trimmed.slice(2).trim().replace(/^"|"$/g, '').replace(/\\/g, '/');
+
+          if (status.includes('D')) {
+            deletedFiles.add(filePath);
+            modifiedFiles.delete(filePath);
+            addedFiles.delete(filePath);
+          } else if (status.includes('?') || status.includes('A')) {
+            addedFiles.add(filePath);
+          } else {
+            modifiedFiles.add(filePath);
+          }
+        }
+      }
+    } catch {}
+
+    return {
+      isGitRepo: true,
+      currentCommit,
+      hasChanges: addedFiles.size > 0 || modifiedFiles.size > 0 || deletedFiles.size > 0,
+      addedFiles: Array.from(addedFiles),
+      modifiedFiles: Array.from(modifiedFiles),
+      deletedFiles: Array.from(deletedFiles),
+    };
   }
 }

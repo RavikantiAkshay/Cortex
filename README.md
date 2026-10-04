@@ -55,7 +55,7 @@ That's it. On first run, Cortex will:
   ╔══════════════════════════════════════════════════════╗
   ║        ◆  C O R T E X  ◆                            ║
   ║        Codebase Intelligence Engine                  ║
-  ║        v1.0.3 · AST Chunking · Hybrid RAG · MCP      ║
+  ║        v1.0.4 · AST Chunking · Hybrid RAG · MCP      ║
   ╚══════════════════════════════════════════════════════╝
 
   How would you like to use Cortex?
@@ -133,6 +133,18 @@ Repository Summary:
   Total Files: 187
   Chunks:      1,432
   Path:        ~/.cortex-rag/data/temp_repos/a1b2c3d4...
+```
+
+### Incremental Git Diff Sync
+
+When you modify code in an indexed repository, re-indexing is practically instantaneous. Cortex inspects `git diff` against your last indexed commit, only re-parsing and embedding the specific files that changed (or completing in under 50ms if no files changed):
+
+```bash
+# Sync the most recently indexed repository
+npx cortex-rag cli sync
+
+# Sync a specific repository by UUID or local path
+npx cortex-rag cli sync ./my-project
 ```
 
 ### Query a Repository
@@ -280,6 +292,8 @@ Once connected, your AI assistant gains access to these tools:
 | `search_code` | Hybrid vector + keyword + graph search with RRF scoring | `repo_id` (string), `query` (string), `limit` (number, optional) |
 | `get_function` | Retrieves complete source code of a function or class by exact name | `repo_id` (string), `symbol_name` (string) |
 | `trace_deps` | Traces import and call dependencies for a file or symbol | `repo_id` (string), `target` (string) |
+| `index_repository` | Indexes a local directory or Git URL into Cortex | `path` (string), `name` (string, optional) |
+| `sync_repository` | Incrementally syncs an indexed repository via Git diff in milliseconds | `repo_id` (string) |
 
 ### Available MCP Resources
 

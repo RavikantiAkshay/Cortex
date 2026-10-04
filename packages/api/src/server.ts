@@ -138,6 +138,20 @@ fastify.delete<{
   }
 });
 
+// 3c. Incremental sync repository (Git diff)
+fastify.post<{
+  Params: { id: string };
+}>('/api/v1/repos/:id/sync', async (request, reply) => {
+  const { id } = request.params;
+  try {
+    const repo = await indexer.syncRepository(id);
+    return reply.status(200).send({ data: repo });
+  } catch (err: any) {
+    fastify.log.error(err);
+    return reply.status(500).send({ error: { message: err.message } });
+  }
+});
+
 // 4. Get dependency graph for visualizer canvas
 fastify.get<{
   Params: { id: string };

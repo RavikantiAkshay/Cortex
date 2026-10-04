@@ -19,6 +19,7 @@ export interface VectorStore {
   upsert(collectionName: string, points: VectorPoint[]): Promise<void>;
   search(collectionName: string, vector: number[], limit: number, filter?: Record<string, any>): Promise<VectorSearchResult[]>;
   deleteByRepo(collectionName: string, repoId: string): Promise<void>;
+  deleteByFile(collectionName: string, repoId: string, filePath: string): Promise<void>;
 }
 
 export function cosineSimilarity(a: number[] | Float32Array, b: number[] | Float32Array): number {
@@ -116,6 +117,22 @@ class QdrantVectorStore implements VectorStore {
       },
     });
   }
+
+  async deleteByFile(collectionName: string, repoId: string, filePath: string): Promise<void> {
+    const norm = filePath.replace(/\\/g, '/');
+    try {
+      await this.client.delete(collectionName, {
+        filter: {
+          must: [
+            { key: 'repo_id', match: { value: repoId } },
+            { key: 'file_path', match: { value: norm } },
+          ],
+        },
+      });
+    } catch (e: any) {
+      console.warn(`[Qdrant] deleteByFile notice: ${e.message}`);
+    }
+  }
 }
 
 import { resolveDataPath } from './paths.js';
@@ -203,6 +220,23 @@ class EmbeddedVectorStore implements VectorStore {
       }
     }
     this.saveToDisk();
+  }
+
+  async deleteByFile(_collectionName: string, repoId: string, filePath: string): Promise<void> {
+    const norm = filePath.replace(/\\/g, '/');
+    let changed = false;
+    for (const [id, pt] of this.points.entries()) {
+      if (
+        pt.payload.repo_id === repoId &&
+        (pt.payload.file_path === filePath || pt.payload.file_path === norm)
+      ) {
+        this.points.delete(id);
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.saveToDisk();
+    }
   }
 }
 

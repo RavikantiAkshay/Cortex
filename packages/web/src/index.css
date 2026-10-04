@@ -360,6 +360,71 @@ code, pre {
   font-weight: 600;
 }
 
+.copy-context-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #18181b;
+  border: 1px solid var(--border-light);
+  color: #ffffff;
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.copy-context-btn:hover {
+  background: #27272a;
+  border-color: #ffffff;
+}
+
+.sync-header-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: #18181b;
+  border: 1px solid var(--border);
+  color: #ffffff;
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.sync-header-btn:hover:not(:disabled) {
+  background: #27272a;
+  border-color: #ffffff;
+}
+.sync-header-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sync-repo-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #18181b;
+  border: 1px solid var(--border);
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.sync-repo-btn:hover:not(:disabled) {
+  background: #27272a;
+  border-color: #ffffff;
+}
+.sync-repo-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ── Markdown Answer Styling (Generous Line Spacing & Airy Flow) ── */
 .answer-body {
   font-size: 1rem;

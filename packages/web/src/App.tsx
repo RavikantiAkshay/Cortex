@@ -19,6 +19,7 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   Package,
+  Copy,
 } from 'lucide-react';
 
 interface Repo {
@@ -27,6 +28,7 @@ interface Repo {
   local_path: string;
   total_files: number;
   total_chunks: number;
+  commit_hash?: string;
   status: string;
   indexed_at: string;
 }
@@ -74,6 +76,8 @@ export default function App() {
   } | null>(null);
 
   const answerContentRef = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState<boolean>(false);
+  const [syncingRepoId, setSyncingRepoId] = useState<string | null>(null);
 
   useEffect(() => {
     if (isQuerying && answerContentRef.current) {
@@ -180,6 +184,44 @@ export default function App() {
       alert(`Indexing failed: ${e.message}`);
     } finally {
       setIsIndexing(false);
+    }
+  };
+
+  const handleCopyAnswer = () => {
+    if (!streamingAnswer) return;
+    let text = `### Synthesized Grounded Answer\n\n${streamingAnswer}\n\n### Grounded Citations\n`;
+    if (citations.length > 0) {
+      citations.forEach(c => {
+        text += `- **\`${c.file}\`** (Lines ${c.start_line}–${c.end_line}${c.symbol ? `, \`${c.symbol}\`` : ''})\n`;
+      });
+    }
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleSyncRepo = async (repoIdToSync: string) => {
+    if (!repoIdToSync || syncingRepoId) return;
+    setSyncingRepoId(repoIdToSync);
+    try {
+      const res = await fetch(`/api/v1/repos/${repoIdToSync}/sync`, { method: 'POST' });
+      if (res.ok) {
+        await fetchRepos();
+        if (repoIdToSync === selectedRepoId) {
+          const gRes = await fetch(`/api/v1/repos/${repoIdToSync}/graph`);
+          if (gRes.ok) {
+            const gJson = await gRes.json();
+            setGraphData(gJson.data || { nodes: [], edges: [] });
+          }
+        }
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        alert(`Sync failed: ${errJson.error?.message || res.statusText}`);
+      }
+    } catch (e: any) {
+      alert(`Sync failed: ${e.message}`);
+    } finally {
+      setSyncingRepoId(null);
     }
   };
 
@@ -343,7 +385,7 @@ export default function App() {
         </nav>
 
         {/* Active Repo Switcher */}
-        <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <select
             value={selectedRepoId}
             onChange={e => setSelectedRepoId(e.target.value)}
@@ -359,6 +401,19 @@ export default function App() {
               ))
             )}
           </select>
+
+          {selectedRepoId && (
+            <button
+              type="button"
+              onClick={() => handleSyncRepo(selectedRepoId)}
+              disabled={syncingRepoId === selectedRepoId}
+              className="sync-header-btn"
+              title="Fast incremental sync using Git diff"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${syncingRepoId === selectedRepoId ? 'spinner' : ''}`} />
+              <span>{syncingRepoId === selectedRepoId ? 'Syncing...' : 'Sync'}</span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -434,19 +489,42 @@ export default function App() {
                     <span>Synthesized Grounded Answer</span>
                   </div>
 
-                  {queryStats && (
-                    <div className="answer-badges">
-                      {queryStats.cacheHit ? (
-                        <span className="badge-cache-hit">
-                          <Zap className="w-3 h-3" />
-                          <span>Cache HIT</span>
-                        </span>
-                      ) : (
-                        <span className="badge-latency">Hybrid RRF</span>
-                      )}
-                      <span className="badge-latency">{queryStats.latencyMs}ms</span>
-                    </div>
-                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    {queryStats && (
+                      <div className="answer-badges">
+                        {queryStats.cacheHit ? (
+                          <span className="badge-cache-hit">
+                            <Zap className="w-3 h-3" />
+                            <span>Cache HIT</span>
+                          </span>
+                        ) : (
+                          <span className="badge-latency">Hybrid RRF</span>
+                        )}
+                        <span className="badge-latency">{queryStats.latencyMs}ms</span>
+                      </div>
+                    )}
+
+                    {streamingAnswer && (
+                      <button
+                        type="button"
+                        onClick={handleCopyAnswer}
+                        className="copy-context-btn"
+                        title="Copy Answer & Citations as Markdown"
+                      >
+                        {copied ? (
+                          <>
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copy Context</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="answer-content-area" ref={answerContentRef}>
@@ -1002,11 +1080,21 @@ export default function App() {
                         {r.local_path}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <div style={{ textAlign: 'right' }}>
                         <span style={{ color: '#ffffff', fontWeight: 600 }}>{r.total_files} files</span>
                         <span style={{ color: 'var(--text-muted)' }}> • {r.total_chunks} chunks</span>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => handleSyncRepo(r.id)}
+                        disabled={syncingRepoId === r.id}
+                        className="sync-repo-btn"
+                        title={`Incrementally sync ${r.name} via Git diff`}
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${syncingRepoId === r.id ? 'spinner' : ''}`} />
+                        <span>{syncingRepoId === r.id ? 'Syncing...' : 'Sync Diff'}</span>
+                      </button>
                       <button
                         onClick={() => handleDeleteRepo(r.id, r.name)}
                         className="delete-repo-btn"

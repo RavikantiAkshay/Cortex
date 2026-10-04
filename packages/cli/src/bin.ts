@@ -74,6 +74,63 @@ program
     }
   });
 
+// 1b. cortex sync [repo]
+program
+  .command('sync')
+  .description('Incrementally synchronizes an indexed repository using Git diff')
+  .argument('[repo]', 'Repository UUID or local directory path (defaults to most recently indexed)')
+  .action(async (repoTarget) => {
+    console.log(chalk.bold.cyan('\n⚡ Cortex Incremental Sync (Git Diff)'));
+
+    const spinner = ora('Initializing databases and indexer...').start();
+
+    try {
+      const db = await getDatabase();
+      const vectorStore = await getVectorStore();
+      const embeddingProvider = getEmbeddingProvider();
+      const indexer = new IndexerCoordinator(db, vectorStore, embeddingProvider);
+
+      let repoId = repoTarget;
+      if (!repoId) {
+        const recent = await db.query(
+          `SELECT id, name, local_path FROM repositories WHERE status = 'indexed' ORDER BY indexed_at DESC LIMIT 1`
+        );
+        if (recent.length === 0) {
+          spinner.fail(chalk.red('No indexed repositories found. Run `cortex index <path>` first.'));
+          process.exit(1);
+        }
+        repoId = recent[0].id;
+      } else {
+        const byPath = await db.query(
+          `SELECT id FROM repositories WHERE id = $1 OR local_path = $2 LIMIT 1`,
+          [repoTarget, path.resolve(repoTarget).replace(/\\/g, '/')]
+        );
+        if (byPath.length > 0) {
+          repoId = byPath[0].id;
+        }
+      }
+
+      spinner.text = 'Analyzing Git diff changes...';
+      const repo = await indexer.syncRepository(repoId, (step, pct) => {
+        spinner.text = `[${pct}%] ${step}`;
+      });
+
+      spinner.succeed(chalk.green(`Synchronized repository "${repo.name}" successfully!`));
+      console.log(chalk.bold('\nUpdated Summary:'));
+      console.log(`  ${chalk.cyan('ID:')}          ${repo.id}`);
+      console.log(`  ${chalk.cyan('Total Files:')} ${repo.totalFiles}`);
+      console.log(`  ${chalk.cyan('Chunks:')}      ${repo.totalChunks}`);
+      if (repo.commitHash) {
+        console.log(`  ${chalk.cyan('Commit:')}      ${repo.commitHash.slice(0, 8)}`);
+      }
+      console.log('');
+      process.exit(0);
+    } catch (err: any) {
+      spinner.fail(chalk.red(`Sync failed: ${err.message}`));
+      process.exit(1);
+    }
+  });
+
 // 2. cortex query <prompt>
 program
   .command('query')

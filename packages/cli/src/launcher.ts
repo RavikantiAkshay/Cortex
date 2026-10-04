@@ -9,7 +9,7 @@ import { createInterface } from 'readline';
 import { spawn } from 'child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const VERSION = '1.0.3';
+const VERSION = '1.0.4';
 
 // ─── Paths ──────────────────────────────────────────────────────────────────
 
